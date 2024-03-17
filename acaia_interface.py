@@ -740,25 +740,52 @@ class AcaiaScale(object):
         self.set_interval_thread.join()
 
 def main():
+    while True:
+        try:
+            addresses=find_acaia_devices()
 
-    addresses=find_acaia_devices()
+            time.sleep(1)
+            if addresses:
+                #print_acaia_characteristics(addresses[0])
+                print(addresses[0])
+                time.sleep(1)
+                scale=AcaiaScale(addresses[0])
+                #scale.connect()
+                scale.auto_connect() #to pick the first available
+                break
+            else:
+                print('No Acaia devices found')
+        except KeyboardInterrupt:
+            exit(0)
+        except Exception as e:
+            print(e)
 
-    time.sleep(1)
-    if addresses:
-        #print_acaia_characteristics(addresses[0])
-        print(addresses[0])
-    else:
-        print('No Acaia devices found')
-
-    time.sleep(1)
-    scale=AcaiaScale(addresses[0])
-
-    #scale.connect()
-    scale.auto_connect() #to pick the first available
-
-    for i in range(10):
+    """
+    for i in range(1000):
         print(scale.weight)
-        time.sleep(0.5)
+        time.sleep(1)
+        #scale.tare()
+    """
+
+    try:
+        import serial
+        ser = serial.Serial ('/dev/ttyAMA2') #Open named port
+        ser.baudrate = 19200                 #Set baud rate to 19200
+        ser.timeout = 0.1
+        while True:
+            #data = ser.read(10)
+            ser.write(str(scale.weight).encode('utf-8')) #Send back the received data
+            ser.write(' Test \r\n'.encode('utf-8')) #Send back the received data
+            time.sleep(0.1)
+            data = ser.readline()
+            if data != None:
+                if data.decode() == 'TARE\r\n':
+                    scale.tare()
+    except KeyboardInterrupt:
+        print('disconnecting')
+        scale.disconnect()
+    except Exception as e:
+        print(e)
 
     scale.disconnect()
 
