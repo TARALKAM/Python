@@ -807,7 +807,11 @@ def main():
             
     if len(sys.argv) > 2 and command == 'connect':
         device = sys.argv[2]
-        scale.connect_acaia(device)
+        for i in range(100):
+            scale.connect_acaia(device)
+            if scale.connected:
+                break;
+            
     else:
         print("Invalid parameters")
         print("valid parameters")
@@ -820,15 +824,15 @@ def main():
         # Send data to serial port
         try:
             import serial
-            ser = serial.Serial ('/dev/ttyAMA2') #Open named port
-            ser.baudrate = 19200                 #Set baud rate to 19200
+            ser = serial.Serial ('/dev/ttyAMA2') # Open named port
+            ser.baudrate = 19200                 # Set baud rate to 19200
             ser.timeout = 0.1
             while True:
                 if scale.connected:
                     weight = scale.weight
                     print(weight)
-                    ser.write(str(weight).encode('utf-8')) #Send back the received data
-                    ser.write(' \r\n'.encode('utf-8'))           #Send new line data
+                    ser.write(str(weight).encode('utf-8'))  # Send weight
+                    ser.write(' \r\n'.encode('utf-8'))      # Send new line
                     data = ser.readline()
                     if data != None:
                         if data.decode() == 'TARE\r\n':
