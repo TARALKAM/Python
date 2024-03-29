@@ -55,12 +55,13 @@ def find_acaia_devices(timeout=3,backend='bluepy'):
 
             scanner = Scanner().withDelegate(ScanDelegate())
             devices = scanner.scan(timeout)
-
+            
             addresses=[]
             for dev in devices:
                 for (adtype, desc, value) in dev.getScanData():
                     if (desc=='Complete Local Name' 
                         and (value.startswith('ACAIA')
+                             or value.startswith('acaia')
                              or value.startswith('PYXIS')
                              or value.startswith('PROCH')
                              or value.startswith('LUNAR-')
@@ -73,6 +74,29 @@ def find_acaia_devices(timeout=3,backend='bluepy'):
             raise Exception('bluepy is not installed')
 
     return addresses
+    
+def find_devices(timeout=3,backend='bluepy'):
+    try:
+        from bluepy.btle import Scanner, DefaultDelegate
+
+        class ScanDelegate(DefaultDelegate):
+            def __init__(self):
+                DefaultDelegate.__init__(self)
+
+        scanner = Scanner().withDelegate(ScanDelegate())
+        devices = scanner.scan(timeout)
+        
+        addresses=[]
+        for dev in devices:
+            for (adtype, desc, value) in dev.getScanData():
+                if desc=='Complete Local Name':
+                    #print(adtype)
+                    #print(desc)
+                    print(value)
+                    
+    except Exception as e:
+        print("find_devices failed")
+        print(e)
 
 class Queue(object):
 
@@ -376,7 +400,7 @@ class AcaiaScale(object):
            is the command UUID, and weight_uuid is where the notify comes
            from.  Old-style scales only specify char_uuid
         """
-        print(mac)
+        #print(mac)
 
         if backend=='pygatt':
             try:
@@ -598,6 +622,36 @@ class AcaiaScale(object):
 
         self.notificationsReady()
         time.sleep(0.5)
+        
+    def connect_acaia(self, acaia_device, timeout=3):
+        if self.connected:
+            return
+        logging.info('Trying to find an ACAIA scale...')
+        try:
+            from bluepy.btle import Scanner, DefaultDelegate
+
+            class ScanDelegate(DefaultDelegate):
+                def __init__(self):
+                    DefaultDelegate.__init__(self)
+
+            scanner = Scanner().withDelegate(ScanDelegate())
+            try:
+                devices = scanner.scan(timeout)
+            except:
+                print("scanner failed, scanning again")
+                devices = scanner.scan(timeout)
+            addresses=[]
+            for dev in devices:
+                for (adtype, desc, value) in dev.getScanData():
+                    if desc=='Complete Local Name' and value.startswith(acaia_device):
+                        device_address=dev.addr
+                        self.mac = dev.addr
+                        logging.info('Connecting to:%s' % device_address)
+                        self.connect()
+                        
+        except Exception as e:
+            print("connect failed")
+            print(e)
 
     def auto_connect(self):
         if self.connected:
@@ -739,55 +793,59 @@ class AcaiaScale(object):
         self.set_interval_thread.stop()
         self.set_interval_thread.join()
 
+"""
+main with arguments - find, connect device_name
+"""       
 def main():
-    while True:
+    import sys
+    scale=AcaiaScale(0)
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        if command == "find":
+            find_devices()
+            return
+            
+    if len(sys.argv) > 2 and command == 'connect':
+        device = sys.argv[2]
+        scale.connect_acaia(device)
+    else:
+        print("Invalid parameters")
+        print("valid parameters")
+        print("\t- find")
+        print("\t- connect device_name")
+        print("Use find to find BT devices and connect to connect")
+        return
+            
+    if scale.connected:
+        # Send data to serial port
         try:
-            addresses=find_acaia_devices()
-
-            time.sleep(1)
-            if addresses:
-                #print_acaia_characteristics(addresses[0])
-                print(addresses[0])
-                time.sleep(1)
-                scale=AcaiaScale(addresses[0])
-                #scale.connect()
-                scale.auto_connect() #to pick the first available
-                break
-            else:
-                print('No Acaia devices found')
+            import serial
+            ser = serial.Serial ('/dev/ttyAMA2') #Open named port
+            ser.baudrate = 19200                 #Set baud rate to 19200
+            ser.timeout = 0.1
+            while True:
+                if scale.connected:
+                    weight = scale.weight
+                    print(weight)
+                    ser.write(str(weight).encode('utf-8')) #Send back the received data
+                    ser.write(' \r\n'.encode('utf-8'))           #Send new line data
+                    data = ser.readline()
+                    if data != None:
+                        if data.decode() == 'TARE\r\n':
+                            scale.tare()
+                else:
+                    break
         except KeyboardInterrupt:
-            exit(0)
+            print('\r\n')
+            print('disconnecting')
+            scale.disconnect()
         except Exception as e:
             print(e)
 
-    """
-    for i in range(1000):
-        print(scale.weight)
-        time.sleep(1)
-        #scale.tare()
-    """
-
-    try:
-        import serial
-        ser = serial.Serial ('/dev/ttyAMA2') #Open named port
-        ser.baudrate = 19200                 #Set baud rate to 19200
-        ser.timeout = 0.1
-        while True:
-            #data = ser.read(10)
-            ser.write(str(scale.weight).encode('utf-8')) #Send back the received data
-            ser.write(' Test \r\n'.encode('utf-8')) #Send back the received data
-            time.sleep(0.1)
-            data = ser.readline()
-            if data != None:
-                if data.decode() == 'TARE\r\n':
-                    scale.tare()
-    except KeyboardInterrupt:
-        print('disconnecting')
         scale.disconnect()
-    except Exception as e:
-        print(e)
-
-    scale.disconnect()
+    else:
+        print("Scale not connected")
+        print("Check scale is powered and correct name is selected in connect")
 
 if __name__ == '__main__':
     main()
