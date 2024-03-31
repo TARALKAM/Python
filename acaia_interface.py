@@ -810,8 +810,7 @@ def main():
         for i in range(100):
             scale.connect_acaia(device)
             if scale.connected:
-                break;
-            
+                break
     else:
         print("Invalid parameters")
         print("valid parameters")
