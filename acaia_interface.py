@@ -76,6 +76,7 @@ def find_acaia_devices(timeout=3,backend='bluepy'):
     return addresses
     
 def find_devices(timeout=3,backend='bluepy'):
+    device_list = []
     try:
         from bluepy.btle import Scanner, DefaultDelegate
 
@@ -86,17 +87,19 @@ def find_devices(timeout=3,backend='bluepy'):
         scanner = Scanner().withDelegate(ScanDelegate())
         devices = scanner.scan(timeout)
         
-        addresses=[]
         for dev in devices:
             for (adtype, desc, value) in dev.getScanData():
                 if desc=='Complete Local Name':
                     #print(adtype)
                     #print(desc)
-                    print(value)
+                    #print(value)
+                    device_list.append(value)
                     
     except Exception as e:
         print("find_devices failed")
         print(e)
+    
+    return device_list
 
 class Queue(object):
 
@@ -635,11 +638,8 @@ class AcaiaScale(object):
                     DefaultDelegate.__init__(self)
 
             scanner = Scanner().withDelegate(ScanDelegate())
-            try:
-                devices = scanner.scan(timeout)
-            except:
-                print("scanner failed, scanning again")
-                devices = scanner.scan(timeout)
+            devices = scanner.scan(timeout)
+            
             addresses=[]
             for dev in devices:
                 for (adtype, desc, value) in dev.getScanData():
@@ -798,36 +798,83 @@ main with arguments - find, connect device_name
 """       
 def main():
     import sys
-    scale=AcaiaScale(0)
-    if len(sys.argv) > 1:
-        command = sys.argv[1]
+    import serial
+   
+    command = None
+    device = None
+    port = '/dev/ttyS0'
+    find_first_acaia = True
+    
+    arg_len = len(sys.argv) - 1
+    i = 1
+    while i <= arg_len:
+        command = sys.argv[i]
+        i = i + 1
         if command == "find":
-            find_devices()
+            device_list = find_devices()
+            for value in device_list:
+                print(value)
+            return
+        if command == 'connect' and arg_len >= i:
+            device = sys.argv[i]
+            i = i + 1
+            find_first_acaia = False
+        if command == 'port' and arg_len >= i:
+            port = sys.argv[i]
+            i = i + 1
+
+    try:
+        ser = serial.Serial(port)    # Open named port
+        ser.baudrate = 19200         # Set baud rate to 19200
+        ser.timeout = 0.1
+    except Exception as e:
+        print(e)
+        return
+        
+    while True:
+        scale=AcaiaScale(0)
+        try:
+            if find_first_acaia:
+                device = None
+                while True:
+                    device_list = find_devices()
+                    #print(device_list)
+                    for value in device_list:
+                        if (value.startswith('ACAIA')
+                            or value.startswith('acaia')
+                            or value.startswith('PYXIS')
+                            or value.startswith('PROCH')
+                            or value.startswith('LUNAR-')
+                            or value.startswith('LINK_BV_')):
+                               device = value
+                               break
+                        else:
+                            print('No device found')
+                    if device != None:
+                        break
+        except KeyboardInterrupt:
+            print('Exiting')
+            return
+        except Exception as e:
+            print(e)
             return
             
-    if len(sys.argv) > 2 and command == 'connect':
-        device = sys.argv[2]
-        for i in range(100):
-            scale.connect_acaia(device)
-            if scale.connected:
-                break
-    else:
-        print("Invalid parameters")
-        print("valid parameters")
-        print("\t- find")
-        print("\t- connect device_name")
-        print("Use find to find BT devices and connect to connect")
-        return
-            
-    if scale.connected:
-        # Send data to serial port
         try:
-            import serial
-            ser = serial.Serial ('/dev/ttyAMA2') # Open named port
-            ser.baudrate = 19200                 # Set baud rate to 19200
-            ser.timeout = 0.1
             while True:
+                scale.connect_acaia(device)
                 if scale.connected:
+                    break
+                time.sleep(2)
+        except KeyboardInterrupt:
+            print('Exiting')
+            return
+        except Exception as e:
+            print(e)
+                
+        if scale.connected:
+            # Send data to serial port
+            try:
+                while scale.connected:
                     weight = scale.weight
                     print(weight)
                     ser.write(str(weight).encode('utf-8'))  # Send weight
@@ -836,19 +883,20 @@ def main():
                     if data != None:
                         if data.decode() == 'TARE\r\n':
                             scale.tare()
-                else:
-                    break
-        except KeyboardInterrupt:
-            print('\r\n')
-            print('disconnecting')
-            scale.disconnect()
-        except Exception as e:
-            print(e)
+            except KeyboardInterrupt:
+                print('disconnecting')
+                scale.disconnect()
+                return
+            except Exception as e:
+                print(e)
 
-        scale.disconnect()
-    else:
-        print("Scale not connected")
-        print("Check scale is powered and correct name is selected in connect")
+            print("Disconnected")
+            scale.disconnect()
+        else:
+            print("Scale not connected")
+            print("Check scale is powered and correct name is selected in connect")
+        
+        time.sleep(2)
 
 if __name__ == '__main__':
     main()
